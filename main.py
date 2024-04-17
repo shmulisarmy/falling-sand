@@ -7,6 +7,7 @@ def draw(passed_in_board):
                 continue
             pygame.draw.rect(window, col, pygame.Rect(sand_size * j, sand_size * i, sand_size, sand_size))
 
+
 pygame.init()
 width, height = 800, 800
 window = pygame.display.set_mode((width, height))

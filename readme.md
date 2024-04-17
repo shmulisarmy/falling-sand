@@ -6,7 +6,6 @@
 |c|clear the screen|
 |q|stop the program and automaticly play back video|
 
-
 ```sh
 python3 main.py
 ```
