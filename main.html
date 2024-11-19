@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sand Simulation with Enhanced Controls</title>
+    <style>
+        canvas { background: black; display: block; margin: 20px auto; }
+        .controls { text-align: center; margin: 10px; }
+        .slider-label { margin: 0 10px; }
+        .color-option { margin: 0 5px; padding: 5px; }
+        .camera-icon { width: 50px; height: 50px; display: none; margin-bottom: 10px; }
+        .playback-controls { margin: 10px; }
+        .wind-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin: 10px;
+        }
+        .wind-direction-select {
+            padding: 5px;
+            font-size: 16px;
+        }
+        .control-group {
+            margin: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        select {
+            padding: 5px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="control-group">
+            <label class="slider-label">Wind Strength</label>
+            <input type="range" id="windSlider" min="0" max="10" step="1" value="2">
+            
+            <label class="slider-label">Wind Direction</label>
+            <select id="windDirection" class="wind-direction-select">
+                <option value="-1">◀ Left</option>
+                <option value="0">● Center</option>
+                <option value="1">Right ▶</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label class="slider-label">Background</label>
+            <input type="range" id="bgSlider" min="0" max="255" step="1" value="0">
+        </div>
+        
+        <div class="control-group">
+            <label class="slider-label">Sand Color</label>
+            <select id="colorPicker" class="color-option">
+                <option value="gradient">Rainbow Gradient</option>
+                <option value="gold">Golden Sand</option>
+                <option value="red">Red Sand</option>
+                <option value="white">White Sand</option>
+                <option value="blue">Blue Sand</option>
+                <option value="green">Green Sand</option>
+                <option value="purple">Purple Sand</option>
+                <option value="orange">Orange Sand</option>
+                <option value="pink">Pink Sand</option>
+                <option value="teal">Teal Sand</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <button id="recordButton">Record State</button>
+            <button id="playButton" disabled>Play Recording</button>
+        </div>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    <img src="camera-icon.png" id="cameraIcon" class="camera-icon" alt="Recording">
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const width = 1200;
+        const height = 600;
+        const sandSize = 10;
+        let running = true;
+
+        canvas.width = width;
+        canvas.height = height;
+
+        let board = Array.from({ length: height / sandSize }, () => Array(width / sandSize).fill(0));
+        let windAmount = 2;
+        let screenColor = 0;
+        let allBoards = [];
+        let sandDropped = 0;
+        let mouse = { x: 0, y: 0, down: false };
+
+        // Recording related variables
+        let actions = [];
+        let isRecording = false;
+        let initialState = null;
+        let isPlayingBack = false;
+
+        // Color definitions
+        const staticColors = {
+            gold: '#FFD700',
+            red: '#FF4444',
+            white: '#FFFFFF',
+            blue: '#4444FF',
+            green: '#44FF44',
+            purple: '#8844FF',
+            orange: '#FFA500',
+            pink: '#FF69B4',
+            teal: '#008080'
+        };
+
+        const gradientColors = [
+            { r: 173, g: 216, b: 230 }, // Light Blue
+            { r: 144, g: 238, b: 144 }, // Light Green
+            { r: 255, g: 255, b: 102 }, // Light Yellow
+            { r: 255, g: 182, b: 193 }, // Light Pink
+            { r: 240, g: 128, b: 128 }  // Light Coral
+        ];
+
+        // HTML elements
+        const windSlider = document.getElementById('windSlider');
+        const bgSlider = document.getElementById('bgSlider');
+        const recordButton = document.getElementById('recordButton');
+        const playButton = document.getElementById('playButton');
+        const colorPicker = document.getElementById('colorPicker');
+        const cameraIcon = document.getElementById('cameraIcon');
+        const windDirectionSelect = document.getElementById('windDirection');
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', () => { mouse.down = true; });
+        canvas.addEventListener('mouseup', () => { mouse.down = false; });
+
+        function interpolateColor(color1, color2, factor) {
+            const r = Math.round(color1.r + (color2.r - color1.r) * factor);
+            const g = Math.round(color1.g + (color2.g - color1.g) * factor);
+            const b = Math.round(color1.b + (color2.b - color1.b) * factor);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function getSandColor() {
+            if (colorPicker.value === 'gradient') {
+                const colorIndex = Math.floor(sandDropped / 256) % gradientColors.length;
+                const nextColorIndex = (colorIndex + 1) % gradientColors.length;
+                const factor = (sandDropped % 256) / 256;
+                return interpolateColor(gradientColors[colorIndex], gradientColors[nextColorIndex], factor);
+            }
+            return staticColors[colorPicker.value];
+        }
+
+        function draw(passedInBoard) {
+            ctx.fillStyle = `rgb(${screenColor}, ${screenColor}, ${screenColor})`;
+            ctx.fillRect(0, 0, width, height);
+            
+            for (let i = 0; i < passedInBoard.length; i++) {
+                for (let j = 0; j < passedInBoard[i].length; j++) {
+                    const color = passedInBoard[i][j];
+                    if (color) {
+                        ctx.fillStyle = color;
+                        ctx.fillRect(j * sandSize, i * sandSize, sandSize, sandSize);
+                    }
+                }
+            }
+        }
+
+        function updateBoard() {
+            const queue = [];
+            const windDirection = parseFloat(windDirectionSelect.value);
+
+            for (let i = 0; i < board.length - 1; i++) {
+                for (let j = 0; j < board[i].length; j++) {
+                    if (board[i][j] && !board[i + 1][j]) {
+                        const ri = Math.floor(Math.random() * 2) + 2;
+                        const windEffect = windAmount * windDirection;
+                        const rj = Math.floor(Math.random() * (2 * Math.abs(windEffect) + 1)) * Math.sign(windEffect);
+                        
+                        if (i + ri < board.length && j + rj >= 0 && j + rj < board[0].length && !board[i + ri][j + rj]) {
+                            queue.push({ i: i + ri, j: j + rj, color: board[i][j] });
+                            board[i][j] = 0;
+                        } else {
+                            queue.push({ i: i + 1, j: j, color: board[i][j] });
+                            board[i][j] = 0;
+                        }
+                    }
+                }
+            }
+
+            for (const { i, j, color } of queue) {
+                board[i][j] = color;
+            }
+        }
+
+        function clearSandUnderMouse() {
+            const row = Math.floor(mouse.y / sandSize);
+            const col = Math.floor(mouse.x / sandSize);
+            if (row >= 0 && row < board.length && col >= 0 && col < board[0].length) {
+                board[row][col] = 0;
+                if (isRecording) {
+                    actions.push({
+                        x: col,
+                        y: row,
+                        action: 'destroy',
+                        color: null,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+
+        async function playRecording() {
+            if (!initialState || actions.length === 0) return;
+            
+            isPlayingBack = true;
+            running = false;
+            
+            board = JSON.parse(JSON.stringify(initialState));
+            draw(board);
+
+            const startTime = actions[0].timestamp;
+            
+            for (let i = 0; i < actions.length; i++) {
+                const action = actions[i];
+                const nextAction = actions[i + 1];
+                
+                if (action.action === 'place') {
+                    board[action.y][action.x] = action.color;
+                } else if (action.action === 'destroy') {
+                    board[action.y][action.x] = 0;
+                }
+                
+                draw(board);
+                updateBoard();
+                
+                if (nextAction) {
+                    const delay = nextAction.timestamp - action.timestamp;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            
+            isPlayingBack = false;
+            running = true;
+            loop();
+        }
+
+        function loop() {
+            if (!running) return;
+
+            windAmount = parseInt(windSlider.value, 10);
+            screenColor = parseInt(bgSlider.value, 10);
+
+            const sandColor = getSandColor();
+
+            if (mouse.down && !isPlayingBack) {
+                const row = Math.floor(mouse.y / sandSize);
+                const col = Math.floor(mouse.x / sandSize);
+                if (row >= 0 && row < board.length && col >= 0 && col < board[0].length) {
+                    board[row][col] = sandColor;
+                    sandDropped++;
+                    if (isRecording) {
+                        actions.push({
+                            x: col,
+                            y: row,
+                            action: 'place',
+                            color: sandColor,
+                            timestamp: Date.now()
+                        });
+                    }
+                }
+            } else if (!isPlayingBack) {
+                clearSandUnderMouse();
+            }
+
+            draw(board);
+            updateBoard();
+            requestAnimationFrame(loop);
+        }
+
+        recordButton.addEventListener('click', () => {
+            isRecording = !isRecording;
+            cameraIcon.style.display = isRecording ? 'block' : 'none';
+
+            if (isRecording) {
+                initialState = JSON.parse(JSON.stringify(board));
+                actions = [];
+                playButton.disabled = true;
+            } else {
+                console.log('Recording stopped:', actions);
+                playButton.disabled = false;
+            }
+        });
+
+        playButton.addEventListener('click', () => {
+            if (!isPlayingBack) {
+                playRecording();
+            }
+        });
+
+        loop();
+    </script>
+</body>
+</html>

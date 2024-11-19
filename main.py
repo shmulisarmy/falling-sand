@@ -19,7 +19,7 @@ color_index = random.randint(0, 255)
 red_amount = random.randint(0, 255)
 blue_amount = random.randint(0, 255)
 color_index_increment = random.randint(0, 10)/10
-wind_amount = 1
+wind_amount = 2
 screen_color = 0
 font = pygame.font.Font(None, 36)  # You can also specify a font file path instead of 'None'
 
